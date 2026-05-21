@@ -8,12 +8,13 @@ exports.handler = async (event) => {
   const FROM        = process.env.TWILIO_FROM;
 
   if (!ACCOUNT_SID || !AUTH_TOKEN || !FROM) {
+    console.error('Missing env vars:', { ACCOUNT_SID: !!ACCOUNT_SID, AUTH_TOKEN: !!AUTH_TOKEN, FROM: !!FROM });
     return { statusCode: 500, body: 'Missing Twilio environment variables' };
   }
 
   let body;
   try { body = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch (e) { return { statusCode: 400, body: 'Invalid JSON' }; }
 
   const { to, message } = body;
   if (!to || !message) return { statusCode: 400, body: 'Missing to or message' };
@@ -23,6 +24,7 @@ exports.handler = async (event) => {
 
   for (const number of recipients) {
     const params = new URLSearchParams({ To: number, From: FROM, Body: message });
+    console.log('Sending SMS to:', number, 'from:', FROM);
     const resp = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`,
       {
@@ -35,7 +37,8 @@ exports.handler = async (event) => {
       }
     );
     const data = await resp.json();
-    results.push({ number, sid: data.sid, error: data.message });
+    console.log('Twilio response:', JSON.stringify(data));
+    results.push({ number, sid: data.sid, status: data.status, error: data.message, code: data.code });
   }
 
   const allOk = results.every(r => r.sid);
