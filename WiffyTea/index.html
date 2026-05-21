@@ -10,7 +10,7 @@
 <title>Wiffy Tea</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -164,9 +164,44 @@ textarea::placeholder{color:var(--label-ter);}
 
 <div class="toast" id="toast"></div>
 <script>
-const EJS_PUBKEY   = '4Yvjk1maG7l-FG_ik';
-const EJS_SERVICE  = 'service_nzk0go1';
-const EJS_TEMPLATE = 'template_axxcphj';
+const PAUL_PHONE   = '+61402607077';
+
+async function sendSMS(to, message) {
+  const res = await fetch('/.netlify/functions/send-sms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, message })
+  });
+  const data = await res.json();
+  console.log('SMS result:', JSON.stringify(data));
+  if (!res.ok) throw new Error(JSON.stringify(data));
+  return data;
+}
+
+const SB_URL  = 'https://acsulaharyphoxjpbomt.supabase.co';
+const SB_KEY  = 'sb_publishable_sfSCplenSKGzrRyH4g_XVA_Kx24TaeI';
+
+async function sbInsertOrder(order) {
+  const res = await fetch(`${SB_URL}/rest/v1/orders`, {
+    method: 'POST',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify({
+      tea_name:  order.tea.name,
+      tea_emoji: order.tea.emoji,
+      extras:    order.extras.join(', '),
+      note:      order.note || '',
+      time:      order.time,
+      notified:  false
+    })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 
 const TEAS=[
   {id:'chamomile',   name:'Chamomile',    desc:'Calming & floral',   emoji:'🌼', ic:'ic-yellow'},
@@ -233,17 +268,12 @@ sendBtn.addEventListener('click',async()=>{
   sendBtn.disabled=true;sendBtn.textContent='Sending…';
   sendStatus.textContent='';sendStatus.className='send-status';
   try{
-    emailjs.init({publicKey:EJS_PUBKEY});
-    await emailjs.send(EJS_SERVICE,EJS_TEMPLATE,{
-      tea_name: selectedTea.emoji+' '+selectedTea.name,
-      extras:   extras.length?extras.join(', '):'None',
-      note:     note||'No notes',
-      time:     timeStr,
-      to_email: 'paul.napper09@gmail.com'
-    });
+    const extrasStr = extras.length ? extras.join(', ') : 'None';
+    const msg = `☕ WiffyTea order!\n${selectedTea.emoji} ${selectedTea.name}\nAdd-ons: ${extrasStr}${note ? '\nNote: '+note : ''}\nTime: ${timeStr}`;
+    await sendSMS(PAUL_PHONE, msg);
     sendStatus.textContent='✓ Paul has been notified!';sendStatus.className='send-status ok';
   }catch(err){
-    sendStatus.textContent='⚠ Email failed — please try again';
+    sendStatus.textContent='⚠ SMS failed — please try again';
     sendStatus.className='send-status err';
     console.error(err);
   }
@@ -251,9 +281,10 @@ sendBtn.addEventListener('click',async()=>{
   history.unshift(lastOrder);
   if(history.length>6)history.pop();
   renderHistory();
-  try{const q=JSON.parse(localStorage.getItem('wiffytea_queue')||'[]');q.unshift(lastOrder);if(q.length>20)q.pop();localStorage.setItem('wiffytea_queue',JSON.stringify(q));}catch(e){}
+  try{ await sbInsertOrder(lastOrder); }catch(e){ console.error('Supabase insert failed:',e); }
   showToast(selectedTea.emoji+' '+selectedTea.name+' ordered!');
-  setTimeout(()=>openRatingModal(selectedTea),800);
+  const orderedTea=selectedTea;
+  setTimeout(()=>openRatingModal(orderedTea),800);
   document.querySelectorAll('.tea-row').forEach(r=>r.classList.remove('selected'));
   document.querySelectorAll('.chip').forEach(c=>{
     c.classList.remove('selected');
@@ -292,14 +323,10 @@ modalSubmit.addEventListener('click',async()=>{
   const stars='⭐'.repeat(ratingStars);
   const fb=modalFeedback.value.trim()||'No additional feedback';
   try{
-    emailjs.init({publicKey:EJS_PUBKEY});
-    await emailjs.send(EJS_SERVICE,EJS_TEMPLATE,{
-      tea_name: lastOrder.tea.emoji+' '+lastOrder.tea.name,
-      extras:   lastOrder.extras.length?lastOrder.extras.join(', '):'None',
-      note:     stars+' — '+fb,
-      time:     lastOrder.time,
-      to_email: 'paul.napper09@gmail.com'
-    });
+    const stars='⭐'.repeat(ratingStars);
+    const fb=modalFeedback.value.trim()||'No additional feedback';
+    const msg = `${stars} WiffyTea rating!\n${lastOrder.tea.emoji} ${lastOrder.tea.name}\n${stars} — ${fb}`;
+    await sendSMS(PAUL_PHONE, msg);
     showToast('⭐ Rating sent — thanks!');
   }catch(err){showToast('⚠ Couldn\'t send rating');console.error(err);}
   ratingModal.classList.remove('show');
